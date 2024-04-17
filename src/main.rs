@@ -1,4 +1,4 @@
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Command, ExitCode, ExitStatus, Stdio};
 use std::path::Path;
 use native_dialog::FileDialog;
 
@@ -7,6 +7,11 @@ const SUBTITLE_FILE_EXTENSIONS: [&str; 4] = ["srt", "ass", "ssa", "sub"];
 
 fn main() -> ExitCode {
     
+    if !check_for_ffmpeg() {
+        eprintln!("Could not find ffmpeg.");
+        return ExitCode::FAILURE
+    }
+
     let fd = FileDialog::new()
         .set_location("~")
         .add_filter("Video files", &VIDEO_FORMATS)
@@ -28,6 +33,31 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+fn check_for_ffmpeg() -> bool {
+    let result: ExitStatus = if cfg!(target_os = "windows") {
+        let mut temp = Command::new("cmd");
+        temp.stdin(Stdio::null());
+        temp.stdout(Stdio::null());
+        temp.env_clear();
+        temp.arg("/c");
+        #[cfg(windows)]
+        temp.raw_arg(format!("\"{}\"", "ffmpeg -version"));
+        temp.spawn().expect("Command failed to start")
+            .wait().expect("Failed to wait for child process")
+    } else {
+        let mut temp = Command::new("sh");
+        temp.stdin(Stdio::null());
+        temp.stdout(Stdio::null());
+        temp.env_clear();
+        temp.arg("-c");
+        temp.arg("ffmpeg -version");
+        temp.spawn().expect("Command failed to start")
+            .wait().expect("Failed to wait for child process")
+    };
+
+    result.success()
 }
 
 fn generate_command_for_file(video_file: String) -> Option<Command>
@@ -116,8 +146,9 @@ fn generate_command_for_file(video_file: String) -> Option<Command>
         temp.stdin(Stdio::null());
         temp.stdout(Stdio::inherit());
         temp.env_clear();
-        temp.arg("/C");
-        temp.arg(full_command.as_str());
+        temp.arg("/c");
+        #[cfg(windows)]
+        temp.raw_arg(format!("\"{}\"", full_command.as_str()));
         temp
     } else {
         let mut temp = Command::new("sh");
