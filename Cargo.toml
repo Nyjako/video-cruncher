@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 native-dialog = "0.7.0"
+subprocess = "0.2.9"

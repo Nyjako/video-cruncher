@@ -1,12 +1,18 @@
-use std::process::{Command, ExitCode, Stdio};
+use std::process::ExitCode;
 use std::path::Path;
 use native_dialog::FileDialog;
+use subprocess::{Exec, NullFile};
 
 const VIDEO_FORMATS: [&str; 4] = ["mp4", "m4v", "mov", "mkv"];
 const SUBTITLE_FILE_EXTENSIONS: [&str; 4] = ["srt", "ass", "ssa", "sub"];
 
 fn main() -> ExitCode {
     
+    if !check_for_ffmpeg() {
+        eprintln!("Could not find ffmpeg!");
+        return ExitCode::FAILURE;
+    }
+
     let fd = FileDialog::new()
         .set_location("~")
         .add_filter("Video files", &VIDEO_FORMATS)
@@ -18,11 +24,10 @@ fn main() -> ExitCode {
     for f in fd {
         println!("{}", f.to_str().unwrap());
         let command = generate_command_for_file( String::from(f.to_str().unwrap()) );
-        if let Some(mut command) = command {
-            let mut child = command.spawn().expect("Command failed to start");
-            let status = child.wait().expect("Failed to wait for child process");
+        if let Some(command) = command {
+            let status = command.join().expect("Failed to run command");
             if !status.success() {
-                eprintln!("Command failed with exit code: {}", status);
+                eprintln!("Command failed with exit code: {:?}", status);
             }
         }
     }
@@ -30,7 +35,16 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn generate_command_for_file(video_file: String) -> Option<Command>
+fn check_for_ffmpeg() -> bool {
+    let result = Exec::shell("ffmpeg -version")
+        .stdout(NullFile)
+        .join()
+        .expect("Failed to execute ffmpeg");
+
+    result.success()
+}
+
+fn generate_command_for_file(video_file: String) -> Option<Exec>
 {
     let file = Path::new(video_file.as_str());
     let file_name = file.file_stem().expect("Could not extract filename from filepath!");
@@ -111,23 +125,7 @@ fn generate_command_for_file(video_file: String) -> Option<Command>
     let full_command =  format!("ffmpeg {}", command.join(" "));
     println!("FFMPEG command:\n$ {}", full_command);
 
-    let output_command: Command = if cfg!(target_os = "windows") {
-        let mut temp = Command::new("cmd");
-        temp.stdin(Stdio::null());
-        temp.stdout(Stdio::inherit());
-        temp.env_clear();
-        temp.arg("/C");
-        temp.arg(full_command.as_str());
-        temp
-    } else {
-        let mut temp = Command::new("sh");
-        temp.stdin(Stdio::null());
-        temp.stdout(Stdio::inherit());
-        temp.env_clear();
-        temp.arg("-c");
-        temp.arg(full_command.as_str());
-        temp
-    };
+    let output_command = Exec::shell(full_command);
 
     Some(output_command)
 }
