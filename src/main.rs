@@ -1,12 +1,14 @@
 use std::process::{Command, ExitCode, ExitStatus, Stdio};
 use std::path::Path;
 use native_dialog::FileDialog;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 const VIDEO_FORMATS: [&str; 4] = ["mp4", "m4v", "mov", "mkv"];
 const SUBTITLE_FILE_EXTENSIONS: [&str; 4] = ["srt", "ass", "ssa", "sub"];
 
 fn main() -> ExitCode {
-    
+
     if !check_for_ffmpeg() {
         eprintln!("Could not find ffmpeg.");
         return ExitCode::FAILURE
@@ -19,7 +21,7 @@ fn main() -> ExitCode {
         .map_err(|err|{
             eprint!("Failed while opening files:\n{}", err);
         }).expect("Failed while opening files");
-            
+
     for f in fd {
         println!("{}", f.to_str().unwrap());
         let command = generate_command_for_file( String::from(f.to_str().unwrap()) );
