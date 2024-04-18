@@ -1,8 +1,7 @@
 use std::process::{Command, ExitCode, ExitStatus, Stdio};
 use std::path::Path;
 use native_dialog::FileDialog;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
+
 
 const VIDEO_FORMATS: [&str; 4] = ["mp4", "m4v", "mov", "mkv"];
 const SUBTITLE_FILE_EXTENSIONS: [&str; 4] = ["srt", "ass", "ssa", "sub"];
@@ -26,7 +25,8 @@ fn main() -> ExitCode {
         println!("{}", f.to_str().unwrap());
         let command = generate_command_for_file( String::from(f.to_str().unwrap()) );
         if let Some(mut command) = command {
-            let mut child = command.spawn().expect("Command failed to start");
+            let mut child = command
+                .stdin(Stdio::null()).stdout(Stdio::inherit()).spawn().expect("Command failed to start");
             let status = child.wait().expect("Failed to wait for child process");
             if !status.success() {
                 eprintln!("Command failed with exit code: {}", status);
@@ -38,28 +38,33 @@ fn main() -> ExitCode {
 }
 
 fn check_for_ffmpeg() -> bool {
-    let result: ExitStatus = if cfg!(target_os = "windows") {
-        let mut temp = Command::new("cmd");
-        temp.stdin(Stdio::null());
-        temp.stdout(Stdio::null());
-        temp.env_clear();
-        temp.arg("/c");
-        #[cfg(windows)]
-        temp.raw_arg(format!("\"{}\"", "ffmpeg -version"));
-        temp.spawn().expect("Command failed to start")
-            .wait().expect("Failed to wait for child process")
-    } else {
-        let mut temp = Command::new("sh");
-        temp.stdin(Stdio::null());
-        temp.stdout(Stdio::null());
-        temp.env_clear();
-        temp.arg("-c");
-        temp.arg("ffmpeg -version");
-        temp.spawn().expect("Command failed to start")
-            .wait().expect("Failed to wait for child process")
-    };
+    let result: ExitStatus = generate_platform_command("ffmpeg -version".to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn().expect("Command failed to start")
+        .wait().expect("Failed to wait for child process");
 
     result.success()
+}
+
+#[cfg(unix)]
+fn generate_platform_command(command: String) -> Command {
+    let mut temp = Command::new("sh");
+    temp.env_clear();
+    temp.arg("-c");
+    temp.arg(command.as_str());
+    temp
+}
+
+#[cfg(windows)]
+fn generate_platform_command(command: String) -> Command {
+    use std::os::windows::process::CommandExt;
+
+    let mut temp = Command::new("cmd");
+    temp.env_clear();
+    temp.arg("/c");
+    temp.raw_arg(format!("\"{}\"", command.as_str()));
+    temp
 }
 
 fn generate_command_for_file(video_file: String) -> Option<Command>
@@ -143,24 +148,7 @@ fn generate_command_for_file(video_file: String) -> Option<Command>
     let full_command =  format!("ffmpeg {}", command.join(" "));
     println!("FFMPEG command:\n$ {}", full_command);
 
-    let output_command: Command = if cfg!(target_os = "windows") {
-        let mut temp = Command::new("cmd");
-        temp.stdin(Stdio::null());
-        temp.stdout(Stdio::inherit());
-        temp.env_clear();
-        temp.arg("/c");
-        #[cfg(windows)]
-        temp.raw_arg(format!("\"{}\"", full_command.as_str()));
-        temp
-    } else {
-        let mut temp = Command::new("sh");
-        temp.stdin(Stdio::null());
-        temp.stdout(Stdio::inherit());
-        temp.env_clear();
-        temp.arg("-c");
-        temp.arg(full_command.as_str());
-        temp
-    };
+    let output_command = generate_platform_command(full_command);
 
     Some(output_command)
 }
